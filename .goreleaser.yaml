@@ -1,0 +1,27 @@
+version: 2
+
+project_name: Burrow
+
+builds:
+  - main: main.go
+    binary: burrow
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+archives:
+  - format: tar.gz
+    files:
+      - LICENSE
+      - NOTICE
+      - README.md
+      - CHANGELOG.md
+      - config/burrow.toml
+      - config/default-email.tmpl
+      - config/default-http-delete.tmpl
+      - config/default-http-post.tmpl
+      - config/default-slack-delete.tmpl
+      - config/default-slack-post.tmpl

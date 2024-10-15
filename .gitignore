@@ -10,3 +10,5 @@ Burrow.exe
 Burrow.iml
 tmp
 vendor
+
+dist/
