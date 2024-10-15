@@ -10,6 +10,7 @@
 package helpers
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	"github.com/IBM/sarama"
+	"github.com/aws/aws-msk-iam-sasl-signer-go/signer"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/mock"
 )
@@ -118,20 +120,28 @@ func GetSaramaConfigFromClientProfile(profileName string) *sarama.Config {
 
 		saramaConfig.Net.SASL.Enable = true
 		mechanism := viper.GetString("sasl." + saslName + ".mechanism")
-		if mechanism == "SCRAM-SHA-256" {
-			saramaConfig.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA256
-			saramaConfig.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient {
-				return &XDGSCRAMClient{HashGeneratorFcn: SHA256}
-			}
-		} else if mechanism == "SCRAM-SHA-512" {
-			saramaConfig.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA512
-			saramaConfig.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient {
-				return &XDGSCRAMClient{HashGeneratorFcn: SHA512}
+
+		if mechanism == "OAUTHBEARER" {
+			saramaConfig.Net.SASL.Mechanism = sarama.SASLTypeOAuth
+			awsRegion := viper.GetString("sasl." + saslName + ".aws-region")
+			saramaConfig.Net.SASL.TokenProvider = &mskAccessTokenProvider{Region: awsRegion}
+		} else {
+			saramaConfig.Net.SASL.Handshake = viper.GetBool("sasl." + saslName + ".handshake-first")
+			saramaConfig.Net.SASL.User = viper.GetString("sasl." + saslName + ".username")
+			saramaConfig.Net.SASL.Password = viper.GetString("sasl." + saslName + ".password")
+
+			if mechanism == "SCRAM-SHA-256" {
+				saramaConfig.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA256
+				saramaConfig.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient {
+					return &XDGSCRAMClient{HashGeneratorFcn: SHA256}
+				}
+			} else if mechanism == "SCRAM-SHA-512" {
+				saramaConfig.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA512
+				saramaConfig.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient {
+					return &XDGSCRAMClient{HashGeneratorFcn: SHA512}
+				}
 			}
 		}
-		saramaConfig.Net.SASL.Handshake = viper.GetBool("sasl." + saslName + ".handshake-first")
-		saramaConfig.Net.SASL.User = viper.GetString("sasl." + saslName + ".username")
-		saramaConfig.Net.SASL.Password = viper.GetString("sasl." + saslName + ".password")
 	}
 
 	// Timeout for the initial connection
@@ -145,6 +155,15 @@ func GetSaramaConfigFromClientProfile(profileName string) *sarama.Config {
 	}
 
 	return saramaConfig
+}
+
+type mskAccessTokenProvider struct {
+	Region string
+}
+
+func (m *mskAccessTokenProvider) Token() (*sarama.AccessToken, error) {
+	token, _, err := signer.GenerateAuthToken(context.TODO(), m.Region)
+	return &sarama.AccessToken{Token: token}, err
 }
 
 // SaramaClient is an internal interface to the sarama.Client. We use our own interface because while sarama.Client is
